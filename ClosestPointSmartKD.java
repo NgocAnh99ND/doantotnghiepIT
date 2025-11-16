@@ -25,8 +25,8 @@ public class ClosestPointSmartKD {
 
         double diagonalMeters() {
             return ClosestPointSmartKD.haversineMeters(
-                new Point(minLat,minLon),
-                new Point(maxLat,maxLon)
+                    new Point(minLat,minLon),
+                    new Point(maxLat,maxLon)
             );
         }
 
@@ -115,6 +115,8 @@ public class ClosestPointSmartKD {
 
     static List<Point> adaptiveResample(List<Point> src, double spacingM){
         List<Point> out=new ArrayList<>();
+        if (src.isEmpty()) return out;
+
         out.add(src.get(0));
 
         for(int i=0;i<src.size()-1;i++){
@@ -131,112 +133,50 @@ public class ClosestPointSmartKD {
         return out;
     }
 
-    // ========================= TẠO TUYẾN ĐƯỜNG 200 ĐIỂM — 100KM — CONG =========================
-    static List<Point> generateRoute200(){
-        List<Point> pts = new ArrayList<>();
-
-        double startLat=21.028, startLon=105.778;
-        double totalKm=100.0;
-        double latDegKm = 1.0/111.0;
-        double lonDegKm = 1.0/(111.0*Math.cos(Math.toRadians(startLat)));
-
-        for(int i=0;i<200;i++){
-            double t = i/199.0;
-            double d = t*totalKm;
-
-            double lat = startLat - d*latDegKm
-                    + 0.01*Math.sin(t*Math.PI*6)
-                    + 0.005*Math.sin(t*Math.PI*12);
-
-            double lon = startLon + d*lonDegKm
-                    + 0.015*Math.cos(t*Math.PI*4)
-                    + 0.005*Math.sin(t*Math.PI*8);
-
-            pts.add(new Point(lat,lon));
-        }
-        return pts;
-    }
-
-    // ========================= SHRINK RECT =========================
-    static Rect shrinkRect(Rect rect, Point customer, double stopMeters){
-        Rect cur=rect;
-        while(cur.diagonalMeters() > stopMeters){
-
-            boolean splitHoriz = cur.width() >= cur.height();
-            Rect left,right;
-
-            if(splitHoriz){
-                double mid = (cur.minLon + cur.maxLon)/2;
-                left  = new Rect(cur.minLat, cur.minLon, cur.maxLat, mid);
-                right = new Rect(cur.minLat, mid, cur.maxLat, cur.maxLon);
-            } else {
-                double mid = (cur.minLat + cur.maxLat)/2;
-                left  = new Rect(cur.minLat, cur.minLon, mid, cur.maxLon);
-                right = new Rect(mid, cur.minLon, cur.maxLat, cur.maxLon);
-            }
-
-            Point cL=left.center(), cR=right.center();
-            double dL=haversineMeters(customer,cL);
-            double dR=haversineMeters(customer,cR);
-
-            cur = (dL<dR) ? left : right;
-        }
-        return cur;
+    // ========================= TẠO TUYẾN 10 ĐIỂM =========================
+    static List<Point> generateRoute10(){
+        return Arrays.asList(
+            new Point(21.028, 105.778),
+            new Point(21.025, 105.785),
+            new Point(21.021, 105.795),
+            new Point(21.018, 105.805),
+            new Point(21.015, 105.815),
+            new Point(21.011, 105.825),
+            new Point(21.007, 105.835),
+            new Point(21.004, 105.845),
+            new Point(21.000, 105.855),
+            new Point(20.994, 105.866)
+        );
     }
 
     // ========================= MAIN =========================
     public static void main(String[] args) {
 
-        // 1) Tạo lộ trình
-        List<Point> route = generateRoute200();
+        // 1) Lộ trình 10 điểm
+        List<Point> route = generateRoute10();
 
         // 2) Khách
         Point customer = new Point(20.992,105.816);
 
-        // 3) SHRINK + PRUNE + RESAMPLE — chỉ làm 1 lần
-        List<Point> dense;
-        {
-            double minLat=1e9,minLon=1e9,maxLat=-1e9,maxLon=-1e9;
-            for(Point p:route){
-                minLat=Math.min(minLat,p.lat);
-                minLon=Math.min(minLon,p.lon);
-                maxLat=Math.max(maxLat,p.lat);
-                maxLon=Math.max(maxLon,p.lon);
-            }
+        // 3) Nội suy trên toàn tuyến
+        List<Point> dense = adaptiveResample(route, 50.0);
 
-            Rect rect = new Rect(minLat,minLon,maxLat,maxLon);
-            Rect small = shrinkRect(rect, customer, 500);
-
-            List<Point> pruned = new ArrayList<>();
-            for(int i=0;i<route.size()-1;i++){
-                if(small.intersects(route.get(i),route.get(i+1))){
-                    pruned.add(route.get(i));
-                    pruned.add(route.get(i+1));
-                }
-            }
-            if(pruned.isEmpty()) pruned=route;
-
-            dense = adaptiveResample(pruned, 50.0);
-        }
-
-        // 4) BUILD KD-tree — chỉ 1 lần
+        // 4) BUILD KD-tree
         long t1 = System.nanoTime();
         KDNode root = buildKDTree(dense, true);
         long t2 = System.nanoTime();
+        System.out.printf("Thoi gian build KD-tree: %.3f ms%n", (t2-t1)/1e6);
 
-        System.out.printf("🌳 Thời gian build KD-tree: %.3f ms%n", (t2-t1)/1e6);
-
-        // 5) CHẠY THUẬT TOÁN TÌM GẦN NHẤT — 1 lần
+        // 5) TÌM GẦN NHẤT
         long s = System.nanoTime();
         double[] bestDist = {Double.MAX_VALUE};
         Point closest = kdNearest(root, customer, null, bestDist);
         long e = System.nanoTime();
+        System.out.printf("Thoi gian chay kdNearest: %.3f ms%n", (e-s)/1e6);
 
-        System.out.printf("⚡ Thời gian chạy kdNearest: %.3f ms%n", (e-s)/1e6);
-
-        System.out.println("\n===== KẾT QUẢ =====");
-        System.out.printf("📍 Customer: (%.6f, %.6f)%n", customer.lat, customer.lon);
-        System.out.printf("🎯 Closest:  (%.6f, %.6f)%n", closest.lat, closest.lon);
-        System.out.printf("📏 Distance: %.2f m%n", bestDist[0]);
+        System.out.println("\n===== KET QUA =====");
+        System.out.printf("Customer: (%.6f, %.6f)%n", customer.lat, customer.lon);
+        System.out.printf("Closest : (%.6f, %.6f)%n", closest.lat, closest.lon);
+        System.out.printf("Distance: %.2f m%n", bestDist[0]);
     }
 }
