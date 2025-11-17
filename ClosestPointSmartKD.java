@@ -1,4 +1,5 @@
 import java.util.*;
+import java.util.function.Supplier;
 
 public class ClosestPointSmartKD {
 
@@ -47,6 +48,22 @@ public class ClosestPointSmartKD {
                     Math.max(A.lon, B.lon) < minLon ||
                     Math.min(A.lon, B.lon) > maxLon);
         }
+    }
+
+    // ========================= TIMER TOOL =========================
+    static <T> T measureTime(String label, Supplier<T> func) {
+        long t1 = System.nanoTime();
+        T result = func.get();
+        long t2 = System.nanoTime();
+        System.out.printf("%s: %.3f ms%n", label, (t2 - t1) / 1e6);
+        return result;
+    }
+
+    static void measureTimeVoid(String label, Runnable func) {
+        long t1 = System.nanoTime();
+        func.run();
+        long t2 = System.nanoTime();
+        System.out.printf("%s: %.3f ms%n", label, (t2 - t1) / 1e6);
     }
 
     // ========================= KD-TREE =========================
@@ -159,8 +176,7 @@ public class ClosestPointSmartKD {
                 new Point(21.050, 105.840),
                 new Point(21.040, 105.840),
                 new Point(21.030, 105.820),
-                new Point(21.000, 105.810)
-        );
+                new Point(21.000, 105.810));
     }
 
     // ========================= MAIN =========================
